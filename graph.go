@@ -3,8 +3,6 @@ package toposort
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"unicode"
 )
 
 var (
@@ -12,25 +10,23 @@ var (
 	ErrCircular = errors.New("cyclic")
 	// ErrMultipleRoots is raised when a graph contains multiple root nodes.
 	ErrMultipleRoots = errors.New("multiple roots")
-	// ErrInvalidName is raised when a name format couldn't be validated.
-	ErrInvalidName = errors.New("invalid name")
 )
 
-type Vertex struct {
-	afters []string
-	id     string
+type Vertex[K comparable] struct {
+	afters []K
+	id     K
 }
 
 // tsort sorts the given graph topologically.
-func tsort(g map[string]*Vertex) (sorted []string, recursive map[string]bool, recursion []string) {
-	sorted = []string{}
-	visited := make(map[string]bool)
-	recursive = make(map[string]bool) // keys caught in a recursive chain
-	recursion = []string{}            // recursion paths for printing out in the error messages
+func tsort[K comparable](g map[K]*Vertex[K]) (sorted []K, recursive map[K]bool, recursion []K) {
+	sorted = []K{}
+	visited := make(map[K]bool)
+	recursive = make(map[K]bool) // keys caught in a recursive chain
+	recursion = []K{}            // recursion paths for printing out in the error messages
 
-	var visit func(id string, ancestors []string)
+	var visit func(id K, ancestors []K)
 
-	visit = func(id string, ancestors []string) {
+	visit = func(id K, ancestors []K) {
 		vertex := g[id]
 		if _, ok := visited[id]; ok {
 			return
@@ -38,80 +34,64 @@ func tsort(g map[string]*Vertex) (sorted []string, recursive map[string]bool, re
 		ancestors = append(ancestors, id)
 		visited[id] = true
 		for _, afterID := range vertex.afters {
-			if sliceContainsString(ancestors, afterID) {
+			if sliceContains(ancestors, afterID) {
 				recursive[id] = true
 				for _, id := range ancestors {
 					recursive[id] = true
 				}
-				recursion = append(recursion, append([]string{id}, ancestors...)...)
+				recursion = append(recursion, append([]K{id}, ancestors...)...)
 			} else {
 				visit(afterID, ancestors[:])
 			}
 		}
-		sorted = append([]string{id}, sorted...)
+		sorted = append([]K{id}, sorted...)
 	}
 
 	for k := range g {
-		visit(k, []string{})
+		visit(k, []K{})
 	}
 
 	return
 }
 
-type Graph struct {
-	data      map[string]*Vertex // graph itself
-	ids       map[string]string  // original IDs
-	sorted    []string           // toposorted keys
-	recursive map[string]bool    // recursive keys
-	recursion []string           // recursion paths
+type Graph[K comparable] struct {
+	data      map[K]*Vertex[K] // graph itself
+	sorted    []K              // toposorted keys
+	recursive map[K]bool       // recursive keys
+	recursion []K              // recursion paths
 }
 
-func NewGraph(data map[string]string) (*Graph, error) {
-	relations, ids, err := buildRelations(data)
-	if err != nil {
-		return nil, err
-	}
-
-	vertices := make(map[string]*Vertex)
+func Sort[K comparable](relations map[K]K) ([]K, error) {
+	vertices := make(map[K]*Vertex[K])
 
 	for c, p := range relations {
 		if _, ok := vertices[c]; !ok {
-			vertices[c] = &Vertex{id: c}
+			vertices[c] = &Vertex[K]{id: c}
 		}
 		if _, ok := vertices[p]; !ok {
-			vertices[p] = &Vertex{id: p}
+			vertices[p] = &Vertex[K]{id: p}
 		}
 		vertices[p].afters = append(vertices[p].afters, c)
 	}
 
-	g := new(Graph)
+	g := new(Graph[K])
 	g.sorted, g.recursive, g.recursion = tsort(vertices)
-	g.ids = ids
 	g.data = vertices
 
 	if err := validateGraph(g); err != nil {
 		return nil, err
 	}
 
-	return g, nil
-}
-
-// SortedIDs returns the sorted IDs in the original format.
-func (g *Graph) SortedIDs() []string {
-	ret := []string{}
-	for _, k := range g.sorted {
-		ret = append(ret, g.ids[k])
-	}
-	return ret
+	return g.sorted, nil
 }
 
 // validateGraph checks a graph for recursive paths and multiple root nodes.
-func validateGraph(g *Graph) (err MultiError) {
-	var visit func(id string)
+func validateGraph[K comparable](g *Graph[K]) (err MultiError) {
+	var visit func(id K)
 
 	length := 0
 
-	visit = func(id string) {
+	visit = func(id K) {
 		v := g.data[id]
 		for _, afterID := range v.afters {
 			length += 1
@@ -119,7 +99,7 @@ func validateGraph(g *Graph) (err MultiError) {
 		}
 	}
 
-	roots := []string{}
+	roots := []K{}
 	var o int
 	for _, id := range g.sorted {
 		o = length
@@ -134,80 +114,37 @@ func validateGraph(g *Graph) (err MultiError) {
 		}
 	}
 
-	recursions, start, ko := [][]string{}, 0, ""
+	null := *(new(K))
+
+	recursions, start, ko := [][]K{}, 0, null
 	for i, k := range g.recursion {
 		if k == ko {
 			recursions = append(recursions, g.recursion[start:i+1])
 			start = i + 1
-			ko = ""
-		} else if ko == "" {
+			ko = null
+		} else if ko == null {
 			ko = k
 		}
 	}
 
 	// add all cyclic dependency errors to the multierror instance
 	for _, xs := range recursions {
-		err = append(err, fmt.Errorf("%w: %s", ErrCircular, strings.Join(xs, " -> ")))
+		// TODO
+		// err = append(err, fmt.Errorf("%w: %s", ErrCircular, strings.Join(xs, " -> ")))
+		err = append(err, fmt.Errorf("%w: %v", ErrCircular, xs))
 	}
 
 	// add multiple roots error after that if found any
 	if len(roots) > 1 {
-		names := []string{}
-		for _, k := range roots {
-			names = append(names, g.ids[k])
-		}
-		err = append(err, fmt.Errorf("%w: %s", ErrMultipleRoots, strings.Join(names, ", ")))
+		// TODO
+		// err = append(err, fmt.Errorf("%w: %s", ErrMultipleRoots, strings.Join(names, ", ")))
+		err = append(err, fmt.Errorf("%w: %v", ErrMultipleRoots, roots))
 	}
 
 	return
 }
 
-// buildRelations validates IDs in the initially provided relations map.
-// It returns a new relations map with all of the IDs lowercased, and
-// a 2nd index with the original IDs.
-func buildRelations(data map[string]string) (map[string]string, map[string]string, error) {
-	relations := make(map[string]string, len(data))
-	ids := make(map[string]string)
-
-	var err MultiError
-
-	for k, v := range data {
-		sk := strings.ToLower(k)
-		sv := strings.ToLower(v)
-
-		relations[sk] = sv
-
-		if _, ok := ids[sk]; !ok {
-			if !isAlpha(k) || len(k) < 2 { // names can only contain letters and the length must be < 2
-				err = append(err, fmt.Errorf("%w: \"%s\"", ErrInvalidName, k))
-			}
-			ids[sk] = k
-		}
-		if _, ok := ids[sv]; !ok {
-			if !isAlpha(v) || len(v) < 2 {
-				err = append(err, fmt.Errorf("%w: \"%s\"", ErrInvalidName, v))
-			}
-			ids[sv] = v
-		}
-	}
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return relations, ids, nil
-}
-
-func isAlpha(s string) bool {
-	for _, r := range s {
-		if !unicode.IsLetter(r) {
-			return false
-		}
-	}
-	return true
-}
-
-func sliceContainsString(s []string, e string) bool {
+func sliceContains[K comparable](s []K, e K) bool {
 	for _, a := range s {
 		if a == e {
 			return true

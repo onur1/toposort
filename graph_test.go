@@ -55,11 +55,11 @@ func TestGraph(t *testing.T) {
 			err: toposort.ErrCircular,
 		},
 		{
-			desc: "single cyclic case insensitive",
+			desc:   "single case sensitive",
+			sorted: []string{"Jonas", "jONas"},
 			data: map[string]string{
 				"jONas": "Jonas",
 			},
-			err: toposort.ErrCircular,
 		},
 		{
 			desc: "multiple roots",
@@ -71,39 +71,25 @@ func TestGraph(t *testing.T) {
 			},
 			err: toposort.ErrMultipleRoots,
 		},
-		{
-			desc: "invalid name 1",
-			data: map[string]string{
-				"Barbara": "Nick1",
-			},
-			err: toposort.ErrInvalidName,
-		},
-		{
-			desc: "invalid name 2",
-			data: map[string]string{
-				"a": "Nick",
-			},
-			err: toposort.ErrInvalidName,
-		},
 	}
 	for _, tt := range testCases {
 		tt := tt
+
 		t.Run(tt.desc, func(t *testing.T) {
-			g, err := toposort.NewGraph(tt.data)
-			if err != nil {
-				if tt.err == nil {
+			sorted, err := toposort.Sort(tt.data)
+			if tt.err == nil {
+				if err != nil {
 					t.Fatal(err)
 				}
-				if !errors.Is(err, tt.err) {
-					t.Fatalf("expected error %v != %v", tt.err, err)
+				if reflect.DeepEqual(sorted, tt.sorted) {
+					return
 				}
+				t.Fatalf("expected sorted value %+v != %+v", tt.sorted, sorted)
 			}
-			if tt.sorted != nil {
-				sortedIDs := g.SortedIDs()
-				if !reflect.DeepEqual(sortedIDs, tt.sorted) {
-					t.Fatalf("expected sorted value %+v != %+v", tt.sorted, sortedIDs)
-				}
+			if errors.Is(err, tt.err) {
+				return
 			}
+			t.Fatalf("expected error %v != %v", tt.err, err)
 		})
 	}
 }

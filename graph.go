@@ -129,15 +129,11 @@ func validateGraph[K comparable](g *Graph[K]) (err MultiError) {
 
 	// add all cyclic dependency errors to the multierror instance
 	for _, xs := range recursions {
-		// TODO
-		// err = append(err, fmt.Errorf("%w: %s", ErrCircular, strings.Join(xs, " -> ")))
 		err = append(err, fmt.Errorf("%w: %v", ErrCircular, xs))
 	}
 
 	// add multiple roots error after that if found any
 	if len(roots) > 1 {
-		// TODO
-		// err = append(err, fmt.Errorf("%w: %s", ErrMultipleRoots, strings.Join(names, ", ")))
 		err = append(err, fmt.Errorf("%w: %v", ErrMultipleRoots, roots))
 	}
 
